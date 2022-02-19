@@ -1,0 +1,72 @@
+#!/bin/bash
+QUE="$@"
+[[ -z "$@" ]] && read -p "Search " -r QUE 
+play()
+{
+[[ -z "$QUE" ]] && exit
+QUE=$(echo "$QUE" | sed 's/[[:space:]]/+/g')
+MENU="fzf --no-preview --cycle --header-first --layout=reverse --no-info"
+links=$(curl -s "https://fmoviesf.me/search/?keyword=$QUE" \
+  -H 'authority: fmoviesf.me' \
+  -H 'cache-control: max-age=0' \
+  -H 'upgrade-insecure-requests: 1' \
+  -H 'user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.74 Safari/537.36' \
+  -H 'accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9' \
+  -H 'sec-gpc: 1' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'sec-fetch-mode: navigate' \
+  -H 'sec-fetch-user: ?1' \
+  -H 'sec-fetch-dest: document' \
+  -H 'referer: https://fmoviesf.me/' \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -H 'dnt: 1' \
+  --compressed | grep '<a class="poster"' | grep -o 'href=".*' | \
+  sed -e 's/"//g' -e 's/>//g' -e 's/href=//g' )
+selected=$(echo "$links" | sed -e 's/https:\/\/fmoviesf.me\/tv\///g' -e 's/https:\/\/fmoviesf.me\/movie\///g' | cat -n | sed -e 's/^[ \t]*//g' -e 's/[[:space:]]/ /g' | $MENU --tac | awk '{print $1}')
+[[ -z "$selected" ]] && exit
+raw=$(curl -s "$(echo "$links" | sed 's/[[:space:]]//g' | head -n$selected | tail -n1 )/") 
+links=$(echo "$raw" | grep 'data-src="https://video.*' | cat | sed -e 's/data-src="//g' -e 's/"//g' )
+selected=$(echo "$raw" | grep 'data-eps-number.*' | sed -e 's/data-eps-number="/Episode--/g' -e 's/"//g' -e 's/[[:space:]]//g' -e 's/--/ /g' | $MENU | awk '{print $2}' )
+ep="$selected"
+[[ -z "$selected" ]] && exit
+id=$(echo "$links" | head -n$selected | tail -n1 | sed 's/[[:space:]]//g' | sed 's/https:\/\/video.moviedata.xyz\/embed\/player.html//g')
+id=$(curl -s "https://app.opencdn.co/movie$id" | jq '.fembed.link' | sed 's/"//g' | sed 's/https:\/\/moviepl.xyz\/v//g')
+raw=$(curl -s "https://moviepl.xyz/api/source$id" \
+  -H 'authority: moviepl.xyz' \
+  -H 'accept: */*' \
+  -H 'x-requested-with: XMLHttpRequest' \
+  -H 'user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.74 Safari/537.36' \
+  -H 'content-type: application/x-www-form-urlencoded; charset=UTF-8' \
+  -H 'sec-gpc: 1' \
+  -H 'origin: https://moviepl.xyz' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-dest: empty' \
+  -H "referer: https://moviepl.xyz/v$id" \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -H 'dnt: 1' \
+  --data-raw 'r=&d=moviepl.xyz' \
+  --compressed )
+links="$(echo "$raw" |  jq '.data[]' | jq '.file' | sed 's/"//g')"
+selected="$(echo "$raw" | jq '.data[]' | jq '.label' | sed 's/"//g' | cat -n | sed 's/^[ \t]*//g' | $MENU | awk '{print $1}')" 
+[[ -z "$selected" ]] && exit
+lp="$(echo -e "A Play\nB Downlaod" | $MENU | awk '{print $1}')"
+case $lp in
+  A)
+	(nohup mpv --really-quiet "$(echo "$links" | head -n$selected | tail -n1 )" & > /dev/null 2>&1 && disown > /dev/null 2>&1 ) > /dev/null 2>&1 
+	play
+	;;
+  B)
+    	org_p=$PWD
+	mkdir -p "$HOME/Videos/Streamo/$(echo "$QUE" | sed 's/+/-/g')"
+	cd "$HOME/Videos/Streamo/$(echo "$QUE" | sed 's/+/-/g')"
+	curl -fL "$(echo "$links" | head -n$selected | tail -n1 )" > "$(echo "$QUE" | sed 's/+/-/g')-EP-$ep-$(date | sed 's/[[:space:]]/-/g').mp4"
+	cd $org_p
+	exit
+	;;
+  *)
+ 	exit
+	;;
+    esac
+} 
+play
