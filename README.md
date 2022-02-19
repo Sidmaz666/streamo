@@ -15,7 +15,11 @@ A Simple Bash Script to Stream/Download TV-Series and Movies. 🥷🏽
 
 # Installation
 
+### Basic
 		sudo cp streamo /usr/bin/
+
+### Without Cloning
+		sudo curl -s "https://raw.githubusercontent.com/Sidmaz666/streamo/main/streamo" -O > /usr/bin/streamo
 
 # Usage
 		streamo ["search-query"]
